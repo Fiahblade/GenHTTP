@@ -53,12 +53,6 @@ namespace GenHTTP.Modules.Authentication.ApiKey
 
                     return await Content.HandleAsync(request);
                 }
-                else
-                {
-                    return request.Respond()
-                                  .Status(ResponseStatus.Forbidden)
-                                  .Build();
-                }
             }
 
             return request.Respond()

@@ -39,7 +39,7 @@ namespace GenHTTP.Testing.Acceptance.Modules.Authentication
 
             using var response = await runner.GetResponse(request);
 
-            Assert.AreEqual(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         }
 
         [TestMethod]
