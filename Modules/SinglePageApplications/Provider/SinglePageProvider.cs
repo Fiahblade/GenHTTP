@@ -18,60 +18,92 @@ namespace GenHTTP.Modules.SinglePageApplications.Provider
             "index.html", "index.htm"
         };
 
+        private IHandler? _Index;
+
         #region Get-/Setters
 
         public IHandler Parent { get; }
 
         private IResourceTree Tree { get; }
 
-        private IHandler? Index { get; }
-
         private IHandler Resources { get; }
+
+        private bool ServerSideRouting { get; }
 
         #endregion
 
         #region Initialization
 
-        public SinglePageProvider(IHandler parent, IResourceTree tree)
+        public SinglePageProvider(IHandler parent, IResourceTree tree, bool serverSideRouting)
         {
             Parent = parent;
 
             Tree = tree;
+            ServerSideRouting = serverSideRouting;
 
             Resources = IO.Resources.From(tree)
                                     .Build(this);
-
-            foreach (var index in INDEX_FILES)
-            {
-                if (tree.TryGetResource(index, out var indexFile))
-                {
-                    Index = Content.From(indexFile)
-                                   .Build(this);
-
-                    break;
-                }
-            }
         }
 
         #endregion
 
         #region Functionality
 
-        public ValueTask<IResponse?> HandleAsync(IRequest request)
+        public async ValueTask<IResponse?> HandleAsync(IRequest request)
         {
             if (request.Target.Ended)
             {
-                return Index?.HandleAsync(request) ?? new ValueTask<IResponse?>();
+                var index = await GetIndex().ConfigureAwait(false);
+
+                if (index != null)
+                {
+                    return await index.HandleAsync(request);
+                }
             }
             else
             {
-                return Resources.HandleAsync(request);
+                var result = await Resources.HandleAsync(request).ConfigureAwait(false);
+
+                if (result == null)
+                {
+                    var index = await GetIndex();
+
+                    if ((index != null) && ServerSideRouting)
+                    {
+                        return await index.HandleAsync(request);
+                    }
+                }
+
+                return result;
             }
+
+            return null;
+        }
+
+        private async ValueTask<IHandler?> GetIndex()
+        {
+            if (_Index == null)
+            {
+                foreach (var index in INDEX_FILES)
+                {
+                    IResource? indexFile;
+
+                    if ((indexFile = await Tree.TryGetResourceAsync(index)) != null)
+                    {
+                        _Index = Content.From(indexFile)
+                                        .Build(this);
+
+                        break;
+                    }
+                }
+            }
+
+            return _Index;
         }
 
         public ValueTask PrepareAsync() => ValueTask.CompletedTask;
 
-        public IEnumerable<ContentElement> GetContent(IRequest request) => Tree.GetContent(request, this);
+        public IAsyncEnumerable<ContentElement> GetContentAsync(IRequest request) => Tree.GetContent(request, this);
 
         #endregion
 

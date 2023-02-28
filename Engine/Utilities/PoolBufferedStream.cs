@@ -1,14 +1,26 @@
-﻿using System.Buffers;
+﻿using System;
+using System.Buffers;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using System;
-
-using PooledAwait;
 
 namespace GenHTTP.Engine.Utilities
 {
 
+    /// <summary>
+    /// An output stream using a pooled array to buffer small writes.
+    /// </summary>
+    /// <remarks>
+    /// Reduces write calls on underlying streams by collecting small writes
+    /// and flushing them only on request or if the internal buffer overflows. 
+    /// Using a rented buffer from the array pool keeps allocations low.
+    /// 
+    /// Decreases the overhead of response content that issues a lot of small
+    /// writes (such as serializers or template renderers). As the content
+    /// length for such responses is typically not known beforehand, this
+    /// would cause all of those small writes to be converted into chunks, adding 
+    /// a lot of communication overhead to the client connection.
+    /// </remarks>
     public sealed class PoolBufferedStream : Stream
     {
         private static readonly ArrayPool<byte> POOL = ArrayPool<byte>.Shared;
@@ -91,31 +103,26 @@ namespace GenHTTP.Engine.Utilities
             await WriteAsync(buffer.AsMemory(offset, count - offset), cancellationToken);
         }
 
-        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
-            return DoWriteAsync(this, buffer, cancellationToken);
+            var count = buffer.Length;
 
-            static async PooledValueTask DoWriteAsync(PoolBufferedStream self, ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken)
+            if (count < (Buffer.Length - Current))
             {
-                var count = buffer.Length;
+                buffer.CopyTo(Buffer.AsMemory()[Current..]);
 
-                if (count < (self.Buffer.Length - self.Current))
+                Current += count;
+
+                if (Current == Buffer.Length)
                 {
-                    buffer.CopyTo(self.Buffer.AsMemory()[self.Current..]);
-
-                    self.Current += count;
-
-                    if (self.Current == self.Buffer.Length)
-                    {
-                        await self.WriteBufferAsync(cancellationToken).ConfigureAwait(false);
-                    }
+                    await WriteBufferAsync(cancellationToken).ConfigureAwait(false);
                 }
-                else
-                {
-                    await self.WriteBufferAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await WriteBufferAsync(cancellationToken).ConfigureAwait(false);
 
-                    await self.Stream.WriteAsync(buffer, cancellationToken);
-                }
+                await Stream.WriteAsync(buffer, cancellationToken);
             }
         }
 
@@ -126,16 +133,11 @@ namespace GenHTTP.Engine.Utilities
             Stream.Flush();
         }
 
-        public override Task FlushAsync(CancellationToken cancellationToken)
+        public override async Task FlushAsync(CancellationToken cancellationToken)
         {
-            return DoFlushAsync(this, cancellationToken);
+            await WriteBufferAsync(cancellationToken).ConfigureAwait(false);
 
-            static async PooledTask DoFlushAsync(PoolBufferedStream self, CancellationToken cancellationToken)
-            {
-                await self.WriteBufferAsync(cancellationToken).ConfigureAwait(false);
-
-                await self.Stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await Stream.FlushAsync(cancellationToken);
         }
 
         private void WriteBuffer()
@@ -148,7 +150,7 @@ namespace GenHTTP.Engine.Utilities
             }
         }
 
-        private async PooledValueTask WriteBufferAsync(CancellationToken cancellationToken)
+        private async ValueTask WriteBufferAsync(CancellationToken cancellationToken)
         {
             if (Current > 0)
             {

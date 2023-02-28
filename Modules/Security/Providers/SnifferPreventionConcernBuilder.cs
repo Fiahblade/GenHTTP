@@ -2,17 +2,17 @@
 
 using GenHTTP.Api.Content;
 
-namespace GenHTTP.Modules.ErrorHandling.Provider
+namespace GenHTTP.Modules.Security.Providers
 {
 
-    public sealed class ErrorHandlingProviderBuilder : IConcernBuilder
+    public class SnifferPreventionConcernBuilder : IConcernBuilder
     {
 
         #region Functionality
 
         public IConcern Build(IHandler parent, Func<IHandler, IHandler> contentFactory)
         {
-            return new ErrorHandlingProvider(parent, contentFactory);
+            return new SnifferPreventionConcern(parent, contentFactory);
         }
 
         #endregion

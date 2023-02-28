@@ -11,11 +11,17 @@ using GenHTTP.Api.Infrastructure;
 using GenHTTP.Engine.Infrastructure.Configuration;
 using GenHTTP.Engine.Protocol;
 
-using PooledAwait;
-
 namespace GenHTTP.Engine
 {
 
+    /// <summary>
+    /// Maintains a single connection to a client, continuously reading
+    /// requests and generating responses.
+    /// </summary>
+    /// <remarks>
+    /// Implements keep alive and maintains the connection state (e.g. by
+    /// closing it after the last request has been handled).
+    /// </remarks>
     internal sealed class ClientHandler
     {
         private static readonly StreamPipeReaderOptions READER_OPTIONS = new(pool: MemoryPool<byte>.Shared, leaveOpen: true, bufferSize: 65536);
@@ -53,7 +59,7 @@ namespace GenHTTP.Engine
 
         #region Functionality
 
-        internal async PooledValueTask Run()
+        internal async ValueTask Run()
         {
             try
             {
@@ -92,7 +98,7 @@ namespace GenHTTP.Engine
             }
         }
 
-        private async PooledValueTask HandlePipe(PipeReader reader)
+        private async ValueTask HandlePipe(PipeReader reader)
         {
             try
             {

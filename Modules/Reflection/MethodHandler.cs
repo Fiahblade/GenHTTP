@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.IO;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Text.RegularExpressions;
@@ -15,8 +14,7 @@ using GenHTTP.Api.Routing;
 using GenHTTP.Modules.Conversion;
 using GenHTTP.Modules.Conversion.Providers;
 using GenHTTP.Modules.Conversion.Providers.Forms;
-
-using PooledAwait;
+using GenHTTP.Modules.Reflection.Injectors;
 
 namespace GenHTTP.Modules.Reflection
 {
@@ -55,12 +53,14 @@ namespace GenHTTP.Modules.Reflection
 
         private SerializationRegistry Serialization { get; }
 
+        private InjectionRegistry Injection { get; }
+
         #endregion
 
         #region Initialization
 
         public MethodHandler(IHandler parent, MethodInfo method, MethodRouting routing, Func<object> instanceProvider, IMethodConfiguration metaData,
-            Func<IRequest, IHandler, object?, ValueTask<IResponse?>> responseProvider, SerializationRegistry serialization)
+            Func<IRequest, IHandler, object?, ValueTask<IResponse?>> responseProvider, SerializationRegistry serialization, InjectionRegistry injection)
         {
             Parent = parent;
 
@@ -68,6 +68,7 @@ namespace GenHTTP.Modules.Reflection
             Configuration = metaData;
             InstanceProvider = instanceProvider;
             Serialization = serialization;
+            Injection = injection;
 
             ResponseProvider = responseProvider;
 
@@ -90,7 +91,7 @@ namespace GenHTTP.Modules.Reflection
             return await ResponseProvider(request, this, await UnwrapAsync(result));
         }
 
-        private async PooledValueTask<object?[]> GetArguments(IRequest request)
+        private async ValueTask<object?[]> GetArguments(IRequest request)
         {
             var targetParameters = Method.GetParameters();
 
@@ -121,32 +122,22 @@ namespace GenHTTP.Modules.Reflection
                 {
                     var par = targetParameters[i];
 
-                    // request
-                    if (par.ParameterType == typeof(IRequest))
-                    {
-                        targetArguments[i] = request;
-                        continue;
-                    }
+                    // try to provide via injector
+                    var injected = false;
 
-                    // handler
-                    if (par.ParameterType == typeof(IHandler))
+                    foreach (var injector in Injection)
                     {
-                        targetArguments[i] = this;
-                        continue;
-                    }
-
-                    // input stream
-                    if (par.ParameterType == typeof(Stream))
-                    {
-                        if (request.Content is null)
+                        if (injector.Supports(par.ParameterType))
                         {
-                            throw new ProviderException(ResponseStatus.BadRequest, "Request body expected");
+                            targetArguments[i] = injector.GetValue(this, request, par.ParameterType);
+                            
+                            injected = true;
+                            break;
                         }
-
-                        targetArguments[i] = request.Content;
-                        continue;
                     }
 
+                    if (injected) continue;
+                        
                     if ((par.Name is not null) && par.CheckSimple())
                     {
                         // is there a named parameter?
@@ -219,7 +210,7 @@ namespace GenHTTP.Modules.Reflection
 
         public ValueTask PrepareAsync() => ValueTask.CompletedTask;
 
-        public IEnumerable<ContentElement> GetContent(IRequest request)
+        public async IAsyncEnumerable<ContentElement> GetContentAsync(IRequest request)
         {
             if (!Configuration.IgnoreContent)
             {
@@ -229,7 +220,7 @@ namespace GenHTTP.Modules.Reflection
                     {
                         if (TryGetHandler(request, hint, out var handler))
                         {
-                            foreach (var content in handler.GetContent(request))
+                            await foreach (var content in handler.GetContentAsync(request))
                             {
                                 yield return content;
                             }
@@ -325,19 +316,21 @@ namespace GenHTTP.Modules.Reflection
             {
                 var par = targetParameters[i];
 
-                // request
-                if (par.ParameterType == typeof(IRequest))
+                // try injectors to provide value
+                var injected = false;
+
+                foreach (var injector in Injection)
                 {
-                    targetArguments[i] = request;
-                    continue;
+                    if (injector.Supports(par.ParameterType))
+                    {
+                        targetArguments[i] = injector.GetValue(this, request, par.ParameterType);
+
+                        injected = true;
+                        break;
+                    }
                 }
 
-                // handler
-                if (par.ParameterType == typeof(IHandler))
-                {
-                    targetArguments[i] = this;
-                    continue;
-                }
+                if (injected) continue;
 
                 // set from the given input set
                 if ((par.Name is not null) && input.TryGetValue(par.Name, out var value))

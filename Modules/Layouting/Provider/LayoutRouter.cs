@@ -18,44 +18,45 @@ namespace GenHTTP.Modules.Layouting.Provider
 
         public IHandler Parent { get; }
 
-        private Dictionary<string, IHandler> Handlers { get; }
+        private Dictionary<string, IHandler> RoutedHandlers { get; }
+
+        private List<IHandler> RootHandlers { get; }
 
         private IHandler? Index { get; }
-
-        private IHandler? Fallback { get; }
 
         #endregion
 
         #region Initialization
 
         public LayoutRouter(IHandler parent,
-                            Dictionary<string, IHandlerBuilder> handlers,
-                            IHandlerBuilder? index,
-                            IHandlerBuilder? fallback)
+                            Dictionary<string, IHandlerBuilder> routedHandlers,
+                            List<IHandlerBuilder> rootHandlers,
+                            IHandlerBuilder? index)
         {
             Parent = parent;
 
-            Handlers = handlers.ToDictionary(kv => kv.Key, kv => kv.Value.Build(this));
+            RoutedHandlers = routedHandlers.ToDictionary(kv => kv.Key, kv => kv.Value.Build(this));
+
+            RootHandlers = rootHandlers.Select(h => h.Build(this)).ToList();
 
             Index = index?.Build(this);
-            Fallback = fallback?.Build(this);
         }
 
         #endregion
 
         #region Functionality
 
-        public ValueTask<IResponse?> HandleAsync(IRequest request)
+        public async ValueTask<IResponse?> HandleAsync(IRequest request)
         {
             var current = request.Target.Current;
 
             if (current is not null)
             {
-                if (Handlers.ContainsKey(current.Value))
+                if (RoutedHandlers.TryGetValue(current.Value, out var handler))
                 {
                     request.Target.Advance();
 
-                    return Handlers[current.Value].HandleAsync(request);
+                    return await handler.HandleAsync(request).ConfigureAwait(false);
                 }
             }
             else
@@ -63,23 +64,28 @@ namespace GenHTTP.Modules.Layouting.Provider
                 // force a trailing slash to prevent duplicate content
                 if (!request.Target.Path.TrailingSlash)
                 {
-                    return Redirect.To($"{request.Target.Path}/")
-                                   .Build(this)
-                                   .HandleAsync(request);
+                    return await Redirect.To($"{request.Target.Path}/")
+                                         .Build(this)
+                                         .HandleAsync(request);
                 }
 
                 if (Index is not null)
                 {
-                    return Index.HandleAsync(request);
+                    return await Index.HandleAsync(request);
                 }
             }
 
-            if (Fallback is not null)
+            foreach (var handler in RootHandlers)
             {
-                return Fallback.HandleAsync(request);
+                var result = await handler.HandleAsync(request);
+
+                if (result != null)
+                {
+                    return result;
+                }
             }
 
-            return new ValueTask<IResponse?>();
+            return null;
         }
 
         public async ValueTask PrepareAsync()
@@ -89,37 +95,37 @@ namespace GenHTTP.Modules.Layouting.Provider
                 await Index.PrepareAsync();
             }
 
-            if (Fallback != null)
+            foreach (var handler in RoutedHandlers.Values)
             {
-                await Fallback.PrepareAsync();
+                await handler.PrepareAsync();
             }
 
-            foreach (var handler in Handlers.Values)
+            foreach (var handler in RootHandlers)
             {
                 await handler.PrepareAsync();
             }
         }
 
-        public IEnumerable<ContentElement> GetContent(IRequest request)
+        public IAsyncEnumerable<ContentElement> GetContentAsync(IRequest request)
         {
             var result = new List<ContentElement>();
 
             if (Index is not null)
             {
-                result.AddRange(Index.GetContent(request));
+                result.AddRange(Index.GetContentAsync(request).ToEnumerable());
             }
 
-            if (Fallback is not null)
+            foreach (var handler in RoutedHandlers.Values)
             {
-                result.AddRange(Fallback.GetContent(request));
+                result.AddRange(handler.GetContentAsync(request).ToEnumerable());
             }
 
-            foreach (var handler in Handlers.Values)
+            foreach (var handler in RootHandlers)
             {
-                result.AddRange(handler.GetContent(request));
+                result.AddRange(handler.GetContentAsync(request).ToEnumerable());
             }
 
-            return result;
+            return result.ToAsyncEnumerable();
         }
 
         public void Append(PathBuilder path, IRequest request, IHandler? child = null)
@@ -132,7 +138,7 @@ namespace GenHTTP.Modules.Layouting.Provider
                 }
                 else
                 {
-                    foreach (var entry in Handlers)
+                    foreach (var entry in RoutedHandlers)
                     {
                         if (entry.Value == child)
                         {
@@ -146,9 +152,9 @@ namespace GenHTTP.Modules.Layouting.Provider
 
         public IHandler? Find(string segment)
         {
-            if (Handlers.ContainsKey(segment))
+            if (RoutedHandlers.TryGetValue(segment, out var handler))
             {
-                return Handlers[segment];
+                return handler;
             }
 
             if (Index is not null && segment == "{index}")
@@ -156,9 +162,10 @@ namespace GenHTTP.Modules.Layouting.Provider
                 return Index;
             }
 
-            if (Fallback is not null && segment == "{fallback}")
+            // remove as soon as LayoutBuilder.Fallback is removed
+            if (segment == "{layout}" || segment == "{fallback}") 
             {
-                return Fallback;
+                return this;
             }
 
             return null;

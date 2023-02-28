@@ -1,6 +1,6 @@
 # GenHTTP Webserver
 
-GenHTTP is a lightweight web server written in pure C# with only a few dependencies to 3rd-party libraries. The main purpose of this project is to quickly create feature rich web applications and web services written in .NET 6, allowing developers to concentrate on the functionality rather than on messing around with configuration files, CSS or bundling JS files. Projects are mainly written in .NET, which allows C# developers to use their familiar toolset in web application development as well.
+GenHTTP is a lightweight web server written in pure C# with only a few dependencies to 3rd-party libraries. The main purpose of this project is to quickly create feature rich web applications and web services written in .NET 6/7, allowing developers to concentrate on the functionality rather than on messing around with configuration files, CSS or bundling JS files. Projects are mainly written in .NET, which allows C# developers to use their familiar toolset in web application development as well.
 
 As an example, the website of this project is hosted on a Raspberry Pi: [genhttp.org](https://genhttp.org/)
 
@@ -40,7 +40,7 @@ The [documentation](https://genhttp.org/documentation/) provides a step-by-step 
 
 ## Building the Server
 
-To build the server from source, clone this repository and run the playground project launcher for .NET 6:
+To build the server from source, clone this repository and run the playground project launcher for .NET 7:
 
 ```sh
 git clone https://github.com/Kaliumhexacyanoferrat/GenHTTP.git
@@ -50,7 +50,19 @@ dotnet run
 
 This will build the playground project launcher with all the server dependencies and launch the server process on port 8080. You can access the playground in the browser via http://localhost:8080.
 
-All contributions are welcome - If you would like to contribute, have a look at the [contribution guidelines](https://github.com/Kaliumhexacyanoferrat/GenHTTP/blob/master/CONTRIBUTING.md).
+## Contributing
+
+Writing a general purpose web application server is a tremendous task, so any contribution is very welcome. Besides extending the server core, you might want to
+
+- Extend the content capabilities of the server (e.g. by adding a new serialization format or rendering engine)
+- Add a new [theme](https://github.com/Kaliumhexacyanoferrat/GenHTTP.Themes)
+- Refine our [project templates](https://genhttp.org/documentation/content/templates)
+- Perform code reviews
+- Analyze the performance or security of the server
+- Clarfify and extend our tests
+- Improve the documentation on the [website](https://genhttp.org/) or in code
+
+If you would like to contribute, please also have a look at the [contribution guidelines](https://github.com/Kaliumhexacyanoferrat/GenHTTP/blob/master/CONTRIBUTING.md) and the [good first issues](https://github.com/Kaliumhexacyanoferrat/GenHTTP/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22).
 
 ## History
 
@@ -64,4 +76,4 @@ The web server was originally developed in 2008 to run on a netbook with an Inte
 
 ## Thanks
 
-- [.NET 6](https://github.com/dotnet/core) for a nice platform
+- [.NET 7](https://github.com/dotnet/core) for a nice platform

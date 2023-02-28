@@ -9,6 +9,7 @@ using GenHTTP.Api.Content.Websites;
 using GenHTTP.Api.Protocol;
 using GenHTTP.Api.Routing;
 
+using GenHTTP.Modules.ErrorHandling;
 using GenHTTP.Modules.IO;
 using GenHTTP.Modules.Layouting;
 using GenHTTP.Modules.Robots;
@@ -18,7 +19,7 @@ using GenHTTP.Modules.Websites.Resources;
 namespace GenHTTP.Modules.Websites.Sites
 {
 
-    public sealed class WebsiteRouter : IHandler, IErrorHandler, IPageRenderer, IHandlerResolver
+    public sealed class WebsiteRouter : IHandler, IErrorRenderer, IPageRenderer, IHandlerResolver
     {
 
         #region Get-/Setters
@@ -53,12 +54,17 @@ namespace GenHTTP.Modules.Websites.Sites
                                .Add("styles", styles)
                                .Add(BotInstructions.FILE_NAME, BotInstructions.Default().Sitemap())
                                .Add(Sitemap.FILE_NAME, Sitemap.Create())
-                               .Fallback(content);
+                               .Add(content);
 
             foreach (var concern in concerns)
             {
                 layout.Add(concern);
             }
+
+            // install a HTML error handler that will catch all exceptions
+            // and render them using the IErrorRenderer implemented by this
+            // handler
+            layout.Add(ErrorHandler.Html());
 
             if (favicon is not null)
             {
@@ -74,7 +80,7 @@ namespace GenHTTP.Modules.Websites.Sites
 
             Theme = theme;
 
-            Menu = menu ?? Websites.Menu.Create((r, _) => GetContent(r)).Build();
+            Menu = menu ?? Websites.Menu.Create((r, _) => GetContentAsync(r)).Build();
 
             var scriptRouter = (ScriptRouter)scripts.Build(this);
             var styleRouter = (StyleRouter)styles.Build(this);
@@ -104,7 +110,7 @@ namespace GenHTTP.Modules.Websites.Sites
 
         public ValueTask<IResponse?> HandleAsync(IRequest request) => Handler.HandleAsync(request);
 
-        public IEnumerable<ContentElement> GetContent(IRequest request) => Handler.GetContent(request);
+        public IAsyncEnumerable<ContentElement> GetContentAsync(IRequest request) => Handler.GetContentAsync(request);
 
         public async ValueTask<string> RenderAsync(ErrorModel model)
         {
@@ -115,6 +121,7 @@ namespace GenHTTP.Modules.Websites.Sites
         {
             await Theme.ErrorHandler.RenderAsync(model, target).ConfigureAwait(false);
         }
+
         public async ValueTask<string> RenderAsync(TemplateModel model)
         {
             return await Renderer.RenderAsync(model).ConfigureAwait(false);

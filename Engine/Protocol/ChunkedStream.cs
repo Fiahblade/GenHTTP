@@ -7,11 +7,18 @@ using System.Threading.Tasks;
 
 using GenHTTP.Modules.IO.Streaming;
 
-using PooledAwait;
-
 namespace GenHTTP.Engine.Protocol
 {
 
+    /// <summary>
+    /// Implements chunked transfer encoding by letting the client
+    /// know how many bytes have been written to the response stream. 
+    /// </summary>
+    /// <remarks>
+    /// Response streams are always wrapped into a chunked stream as
+    /// soon as there is no known content length. To avoid this overhead,
+    /// specify the length of your content whenever possible.
+    /// </remarks>
     public sealed class ChunkedStream : Stream
     {
         private static readonly string NL = "\r\n";
@@ -101,7 +108,7 @@ namespace GenHTTP.Engine.Protocol
             }
         }
 
-        public async PooledValueTask FinishAsync()
+        public async ValueTask FinishAsync()
         {
             await WriteAsync("0").ConfigureAwait(false);
             await WriteAsync(NL);
@@ -136,9 +143,9 @@ namespace GenHTTP.Engine.Protocol
 
         private void Write(int value) => Write($"{value:X}");
 
-        private PooledValueTask WriteAsync(string text) => text.WriteAsync(Target);
+        private ValueTask WriteAsync(string text) => text.WriteAsync(Target);
 
-        private PooledValueTask WriteAsync(int value) => WriteAsync($"{value:X}");
+        private ValueTask WriteAsync(int value) => WriteAsync($"{value:X}");
 
         #endregion
 

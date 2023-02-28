@@ -54,24 +54,24 @@ namespace GenHTTP.Modules.VirtualHosting.Provider
 
         public ValueTask<IResponse?> HandleAsync(IRequest request)
         {
-            return GetRouter(request)?.HandleAsync(request) ?? new ValueTask<IResponse?>();
+            return GetHandler(request)?.HandleAsync(request) ?? new ValueTask<IResponse?>();
         }
 
-        public IEnumerable<ContentElement> GetContent(IRequest request)
+        public IAsyncEnumerable<ContentElement> GetContentAsync(IRequest request)
         {
-            return GetRouter(request)?.GetContent(request) ?? new List<ContentElement>();
+            return GetHandler(request)?.GetContentAsync(request) ?? AsyncEnumerable.Empty<ContentElement>();
         }
 
-        private IHandler? GetRouter(IRequest request)
+        private IHandler? GetHandler(IRequest request)
         {
             var host = request.HostWithoutPort();
 
             // try to find a regular route
             if (host is not null)
             {
-                if (Hosts.ContainsKey(host))
+                if (Hosts.TryGetValue(host, out var handler))
                 {
-                    return Hosts[host];
+                    return handler;
                 }
             }
 
